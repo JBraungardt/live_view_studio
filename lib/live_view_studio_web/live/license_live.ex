@@ -5,7 +5,20 @@ defmodule LiveViewStudioWeb.LicenseLive do
   import Number.Currency
 
   def mount(_params, _session, socket) do
-    socket = assign(socket, seats: 3, amount: Licenses.calculate(3))
+    expiration_time = Timex.shift(Timex.now(), minutes: 1)
+
+    if connected?(socket) do
+      Process.send_after(self(), :tick, 1000)
+    end
+
+    socket =
+      assign(socket,
+        seats: 3,
+        amount: Licenses.calculate(3),
+        expiration_time: expiration_time,
+        time_remaining: time_remaining(expiration_time)
+      )
+
     {:ok, socket}
   end
 
@@ -31,10 +44,24 @@ defmodule LiveViewStudioWeb.LicenseLive do
           <div class="amount">
             <%= number_to_currency(@amount) %>
           </div>
+
+          <p class="m-4 font-semibold text-indigo-800">
+            <%= @time_remaining %> remaining for a huge saving.
+          </p>
         </div>
       </div>
     </div>
     """
+  end
+
+  def handle_info(:tick, socket) do
+    time_remaining = time_remaining(socket.assigns.expiration_time)
+
+    socket = assign(socket, :time_remaining, time_remaining)
+
+    Process.send_after(self(), :tick, 1000)
+
+    {:noreply, socket}
   end
 
   def handle_event("update", %{"seats" => seats}, socket) do
@@ -47,5 +74,16 @@ defmodule LiveViewStudioWeb.LicenseLive do
       )
 
     {:noreply, socket}
+  end
+
+  defp time_remaining(expiration_time) do
+    try do
+      Timex.Interval.new(from: Timex.now(), until: expiration_time)
+      |> Timex.Interval.duration(:seconds)
+      |> Timex.Duration.from_seconds()
+      |> Timex.format_duration(:humanized)
+    rescue
+      _ -> 0
+    end
   end
 end
